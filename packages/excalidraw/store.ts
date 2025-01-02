@@ -64,10 +64,9 @@ export const StoreAction = {
    * Eventually undoable.
    *
    * Use for updates which should not be captured immediately - likely
-   * exceptions which are part of some async multi-step process. Otherwise, all
-   * such updates would end up being captured with the next
-   * `StoreAction.CAPTURE` - triggered either by the next `updateScene`
-   * or internally by the editor.
+   * exceptions which are part of some async multi-step process. Such updates
+   * are captured within the next`StoreAction.CAPTURE` - triggered
+   * either by the next `updateScene` or internally by the editor.
    *
    * These updates will _eventually_ make it to the local undo / redo stacks.
    */
@@ -80,7 +79,8 @@ export type StoreActionType = ValueOf<typeof StoreAction>;
  * Store which captures the observed changes and emits them as `StoreIncrement` events.
  */
 export class Store {
-  public readonly onStoreIncrementEmitter = new Emitter<[StoreIncrement]>();
+  public readonly onStoreCaptureEmitter = new Emitter<[StoreIncrement]>();
+  public readonly onStoreUpdateEmitter = new Emitter<[StoreUpdate]>();
 
   private scheduledActions: Set<StoreActionType> = new Set();
   private _snapshot = StoreSnapshot.empty();
@@ -128,6 +128,9 @@ export class Store {
         this.captureIncrement(elements, appState);
       } else if (this.scheduledActions.has(StoreAction.UPDATE)) {
         this.updateSnapshot(elements, appState);
+      } else {
+        // CFDO: this seems wrong, can't really compare with snapshot
+        this.emitUpdates(elements);
       }
     } finally {
       this.satisfiesScheduledActionsInvariant();
@@ -161,7 +164,7 @@ export class Store {
 
       if (!elementsChange.isEmpty() || !appStateChange.isEmpty()) {
         // Notify listeners with the increment
-        this.onStoreIncrementEmitter.trigger(
+        this.onStoreCaptureEmitter.trigger(
           StoreIncrement.create(elementsChange, appStateChange),
         );
       }
@@ -173,16 +176,56 @@ export class Store {
 
   /**
    * Updates the snapshot without performing any diff calculation.
+   *
+   * @emits ElementsUpdate
    */
   public updateSnapshot(
     elements: Map<string, OrderedExcalidrawElement> | undefined,
     appState: AppState | ObservedAppState | undefined,
   ) {
+    const updatedElements = new Map<string, OrderedExcalidrawElement>();
+
+    const prevSnapshot = this.snapshot;
     const nextSnapshot = this.snapshot.maybeClone(elements, appState);
 
-    if (this.snapshot !== nextSnapshot) {
+    if (prevSnapshot !== nextSnapshot) {
+      if (prevSnapshot.elements !== nextSnapshot.elements) {
+        for (const [id, element] of nextSnapshot.elements) {
+          // Due to structured clone we can perform simple reference checks
+          if (prevSnapshot.elements.get(id) !== element) {
+            updatedElements.set(id, element);
+          }
+        }
+      }
+
       // Update snapshot
       this.snapshot = nextSnapshot;
+
+      if (updatedElements.size) {
+        // Notify listeners about ephemeral elements updates
+        this.onStoreUpdateEmitter.trigger(StoreUpdate.create(updatedElements));
+      }
+    }
+  }
+
+  /**
+   * @emits StoreUpdate
+   */
+  private emitUpdates(
+    elements: Map<string, OrderedExcalidrawElement> | undefined,
+  ) {
+    if (!elements) {
+      return;
+    }
+
+    const updatedElements = new Map<string, OrderedExcalidrawElement>(
+      Array.from(updatedElementsIterator(this.snapshot.elements, elements)).map(
+        (x) => [x.id, x],
+      ),
+    );
+
+    if (updatedElements.size) {
+      this.onStoreUpdateEmitter.trigger(StoreUpdate.create(updatedElements));
     }
   }
 
@@ -237,7 +280,7 @@ export class Store {
     const appliedVisibleChanges =
       elementsContainVisibleChange || appStateContainsVisibleChange;
 
-    this.onStoreIncrementEmitter.trigger(increment);
+    this.onStoreCaptureEmitter.trigger(increment);
 
     return [nextElements, nextAppState, appliedVisibleChanges];
   }
@@ -263,7 +306,7 @@ export class Store {
 }
 
 /**
- * Represent an increment to the Store.
+ * Represent a captured increment by the Store.
  */
 export class StoreIncrement {
   private constructor(
@@ -343,6 +386,27 @@ export class StoreIncrement {
 
   public isEmpty() {
     return this.elementsChange.isEmpty() && this.appStateChange.isEmpty();
+  }
+}
+
+/**
+ * Repesents an ephemeral update to the Store.
+ */
+export class StoreUpdate {
+  private constructor(
+    public readonly id: string,
+    public readonly updatedElements: Map<string, OrderedExcalidrawElement>,
+  ) {}
+
+  public static create(
+    updatedElements: Map<string, OrderedExcalidrawElement>,
+    opts: {
+      id: string;
+    } = {
+      id: randomId(),
+    },
+  ) {
+    return new StoreUpdate(opts.id, updatedElements);
   }
 }
 
@@ -447,7 +511,11 @@ export class StoreSnapshot {
       return this.elements;
     }
 
-    const didElementsChange = this.detectChangedElements(elements);
+    // NOTE: we shouldn't just use `sceneVersionNonce` instead, as we need to call this before the scene updates.
+    const didElementsChange = updatedElementsIterator(
+      this.elements,
+      elements,
+    ).next();
 
     if (!didElementsChange) {
       return this.elements;
@@ -455,42 +523,6 @@ export class StoreSnapshot {
 
     const elementsSnapshot = this.createElementsSnapshot(elements);
     return elementsSnapshot;
-  }
-
-  /**
-   * Detect if there any changed elements.
-   *
-   * NOTE: we shouldn't just use `sceneVersionNonce` instead, as we need to call this before the scene updates.
-   */
-  private detectChangedElements(
-    nextElements: Map<string, OrderedExcalidrawElement>,
-  ) {
-    if (this.elements === nextElements) {
-      return false;
-    }
-
-    if (this.elements.size !== nextElements.size) {
-      return true;
-    }
-
-    // loop from right to left as changes are likelier to happen on new elements
-    const keys = Array.from(nextElements.keys());
-
-    for (let i = keys.length - 1; i >= 0; i--) {
-      const prev = this.elements.get(keys[i]);
-      const next = nextElements.get(keys[i]);
-      if (
-        !prev ||
-        !next ||
-        prev.id !== next.id ||
-        prev.version !== next.version ||
-        prev.versionNonce !== next.versionNonce
-      ) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   /**
@@ -528,5 +560,34 @@ export class StoreSnapshot {
     }
 
     return clonedElements;
+  }
+}
+
+/**
+ * Detect if there was any changed element.
+ */
+function* updatedElementsIterator(
+  prevElements: Map<string, OrderedExcalidrawElement>,
+  nextElements: Map<string, OrderedExcalidrawElement>,
+) {
+  if (prevElements === nextElements) {
+    return false;
+  }
+
+  // loop from right to left as changes are likelier to happen on new elements
+  const keys = Array.from(nextElements.keys());
+
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const prev = prevElements.get(keys[i]);
+    const next = nextElements.get(keys[i])!;
+
+    if (
+      !prev ||
+      prev.id !== next.id ||
+      prev.version !== next.version ||
+      prev.versionNonce !== next.versionNonce
+    ) {
+      yield next;
+    }
   }
 }

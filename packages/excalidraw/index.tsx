@@ -24,6 +24,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
   const {
     onChange,
     onIncrement,
+    onUpdate,
     initialData,
     excalidrawAPI,
     isCollaborating = false,
@@ -113,6 +114,7 @@ const ExcalidrawBase = (props: ExcalidrawProps) => {
         <App
           onChange={onChange}
           onIncrement={onIncrement}
+          onUpdate={onUpdate}
           initialData={initialData}
           excalidrawAPI={excalidrawAPI}
           isCollaborating={isCollaborating}

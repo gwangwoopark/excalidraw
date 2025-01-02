@@ -40,7 +40,7 @@ import type { IMAGE_MIME_TYPES, MIME_TYPES } from "./constants";
 import type { ContextMenuItems } from "./components/ContextMenu";
 import type { SnapLine } from "./snapping";
 import type { Merge, MaybePromise, ValueOf, MakeBrand } from "./utility-types";
-import type { StoreActionType, StoreIncrement } from "./store";
+import type { StoreActionType, StoreIncrement, StoreUpdate } from "./store";
 
 export type SocketId = string & { _brand: "SocketId" };
 
@@ -494,6 +494,7 @@ export interface ExcalidrawProps {
     files: BinaryFiles,
   ) => void;
   onIncrement?: (event: StoreIncrement) => void;
+  onUpdate?: (event: StoreUpdate) => void;
   initialData?:
     | (() => MaybePromise<ExcalidrawInitialDataState | null>)
     | MaybePromise<ExcalidrawInitialDataState | null>;
@@ -781,6 +782,7 @@ export interface ExcalidrawImperativeAPI {
   onIncrement: (
     callback: (event: StoreIncrement) => void,
   ) => UnsubscribeCallback;
+  onUpdate: (callback: (event: StoreUpdate) => void) => UnsubscribeCallback;
   onPointerDown: (
     callback: (
       activeTool: AppState["activeTool"],

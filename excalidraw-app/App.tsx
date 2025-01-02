@@ -105,7 +105,7 @@ import Trans from "../packages/excalidraw/components/Trans";
 import { ShareDialog, shareDialogStateAtom } from "./share/ShareDialog";
 import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import type { RemoteExcalidrawElement } from "../packages/excalidraw/data/reconcile";
-import type { StoreIncrement } from "../packages/excalidraw/store";
+import type { StoreIncrement, StoreUpdate } from "../packages/excalidraw/store";
 import {
   CommandPalette,
   DEFAULT_CATEGORIES,
@@ -698,6 +698,15 @@ const ExcalidrawWrapper = () => {
     }
   };
 
+  const onUpdate = (update: StoreUpdate) => {
+    console.log("onUpdate",update)
+    const { updatedElements } = update;
+
+    if (updatedElements.size) {
+      console.log(updatedElements.values())
+    }
+  };
+
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
     null,
   );
@@ -853,7 +862,7 @@ const ExcalidrawWrapper = () => {
         viewModeEnabled: value !== -1,
       },
       elements: Array.from(elements.values()),
-      storeAction: StoreAction.UPDATE,
+      storeAction: value !== -1 ? StoreAction.NONE : StoreAction.UPDATE,
     });
 
     currentVersion.current = value;
@@ -903,6 +912,7 @@ const ExcalidrawWrapper = () => {
         excalidrawAPI={excalidrawRefCallback}
         onChange={onChange}
         onIncrement={onIncrement}
+        onUpdate={onUpdate}
         initialData={initialStatePromiseRef.current.promise}
         isCollaborating={isCollaborating}
         onPointerUpdate={collabAPI?.onPointerUpdate}

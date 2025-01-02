@@ -736,7 +736,8 @@ class App extends React.Component<AppProps, AppState> {
         updateFrameRendering: this.updateFrameRendering,
         toggleSidebar: this.toggleSidebar,
         onChange: (cb) => this.onChangeEmitter.on(cb),
-        onIncrement: (cb) => this.store.onStoreIncrementEmitter.on(cb),
+        onIncrement: (cb) => this.store.onStoreCaptureEmitter.on(cb),
+        onUpdate: (cb) => this.store.onStoreUpdateEmitter.on(cb),
         onPointerDown: (cb) => this.onPointerDownEmitter.on(cb),
         onPointerUp: (cb) => this.onPointerUpEmitter.on(cb),
         onScrollChange: (cb) => this.onScrollChangeEmitter.on(cb),
@@ -2436,9 +2437,13 @@ class App extends React.Component<AppProps, AppState> {
       });
     }
 
-    this.store.onStoreIncrementEmitter.on((increment) => {
+    this.store.onStoreCaptureEmitter.on((increment) => {
       this.history.record(increment);
       this.props.onIncrement?.(increment);
+    });
+
+    this.store.onStoreUpdateEmitter.on((update) => {
+      this.props.onUpdate?.(update);
     });
 
     this.scene.onUpdate(this.triggerRender);
@@ -2499,7 +2504,8 @@ class App extends React.Component<AppProps, AppState> {
     this.laserTrails.stop();
     this.eraserTrail.stop();
     this.onChangeEmitter.clear();
-    this.store.onStoreIncrementEmitter.clear();
+    this.store.onStoreCaptureEmitter.clear();
+    this.store.onStoreUpdateEmitter.clear();
     ShapeCache.destroy();
     SnapCache.destroy();
     clearTimeout(touchTimeout);
